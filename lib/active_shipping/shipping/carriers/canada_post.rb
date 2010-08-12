@@ -8,12 +8,12 @@ module ActiveMerchant
       
       class CanadaPostRateResponse < RateResponse
         
-        attr_reader :boxes
+        attr_reader :boxes, :postal_outlets
         
         def initialize(success, message, params = {}, options = {})
           @rates = options[:rates]
           @boxes = options[:boxes]
-          @postal_outlet = options[:postal_outlet]
+          @postal_outlets = options[:postal_outlets]
           super
         end
         
@@ -26,7 +26,7 @@ module ActiveMerchant
       
       Box = Struct.new(:name, :weight, :expediter_weight, :length, :width, :height, :packedItems)
       PackedItem = Struct.new(:quantity, :description)
-      PostalOutlet = Struct.new(:sequence_no, :distance, :name, :business_name, :postal_address, :phone_number, :business_hours)
+      PostalOutlet = Struct.new(:sequence_no, :distance, :name, :business_name, :postal_address, :business_hours)
       
       DEFAULT_TURN_AROUND_TIME = 5
       ENGLISH_URL = "http://sellonline.canadapost.ca:30000"
@@ -132,7 +132,7 @@ module ActiveMerchant
             )
           end
           
-          xml.elements.each('eparcel/ratesAndServicesResponse/packing/box') do |box|
+          boxes = xml.elements.collect('eparcel/ratesAndServicesResponse/packing/box') do |box|
             b = Box.new
             b.packedItems = []
             b.name = box.get_text('name').to_s
@@ -141,33 +141,40 @@ module ActiveMerchant
             b.length = box.get_text('length').to_s.to_f
             b.width = box.get_text('width').to_s.to_f
             b.height = box.get_text('height').to_s.to_f
-            box.elements.each('packedItem') do |item|
+            b.packedItems = box.elements.collect('packedItem') do |item|
               p = PackedItem.new
               p.quantity = item.get_text('quantity').to_s.to_i
               p.description = item.get_text('description').to_s
-              b.packedItems << p
+              p
             end
-            boxes << b
+            b
           end
           
-          if xml.get_text('eparcel/ratesAndServicesResponse/nearestPostalOutlet/postalOutletSequenceNo')
+          postal_outlets = xml.elements.collect('eparcel/ratesAndServicesResponse/nearestPostalOutlet') do |outlet|
             postal_outlet = PostalOutlet.new
-            postal_outlet.sequence_no = xml.get_text('eparcel/ratesAndServicesResponse/nearestPostalOutlet/postalOutletSequenceNo').to_s
-            postal_outlet.distance = xml.get_text('eparcel/ratesAndServicesResponse/nearestPostalOutlet/distance').to_s
-            postal_outlet.name = xml.get_text('eparcel/ratesAndServicesResponse/nearestPostalOutlet/outletName').to_s
-            postal_outlet.business_name = xml.get_text('eparcel/ratesAndServicesResponse/nearestPostalOutlet/businessName').to_s
-            postal_outlet.postal_address = xml.get_text('eparcel/ratesAndServicesResponse/nearestPostalOutlet/postalAddress').to_s
-            postal_outlet.phone_number = xml.get_text('eparcel/ratesAndServicesResponse/nearestPostalOutlet/phoneNumber').to_s
-            postal_outlet.business_hours = []
+            postal_outlet.sequence_no    = outlet.get_text('postalOutletSequenceNo').to_s
+            postal_outlet.distance       = outlet.get_text('distance').to_s
+            postal_outlet.name           = outlet.get_text('outletName').to_s
+            postal_outlet.business_name  = outlet.get_text('businessName').to_s
+            
+            postal_outlet.postal_address = Location.new({
+              :address1     => outlet.get_text('postalAddress/addressLine').to_s,
+              :postal_code  => outlet.get_text('postalAddress/postal_code').to_s,
+              :city         => outlet.get_text('postalAddress/municipality').to_s,
+              :province     => outlet.get_text('postalAddress/province').to_s,
+              :country      => 'Canada',
+              :phone_number => outlet.get_text('phoneNumber').to_s
+            })
           
-            xml.get_text('eparcel/ratesAndServicesResponse/nearestPostalOutlet/businessHours').each do |hour|
-              postal_outlet.business_hours << {:day_of_week => hour.get_text('dayOfWeek').to_s, :time => hour.get_text('time').to_s }
+            postal_outlet.business_hours = outlet.elements.collect('businessHours') do |hour|
+              { :day_of_week => hour.get_text('dayOfWeek').to_s, :time => hour.get_text('time').to_s }
             end
+            
+            postal_outlet
           end
-          
         end
         
-        CanadaPostRateResponse.new(success, message, Hash.from_xml(response), :rates => rate_estimates, :xml => response, :boxes => boxes, :postal_outlet => postal_outlet)
+        CanadaPostRateResponse.new(success, message, Hash.from_xml(response), :rates => rate_estimates, :xml => response, :boxes => boxes, :postal_outlets => postal_outlets)
       end
       
       def valid_credentials?

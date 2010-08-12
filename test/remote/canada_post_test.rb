@@ -8,6 +8,7 @@ class CanadaPostTest < Test::Unit::TestCase
     login = fixtures(:canada_post)
     
     @request  = xml_fixture('canadapost/example_request')    
+    @response_with_postal_outlets = xml_fixture('canadapost/example_response_with_postal_outlet')
     @carrier   = CanadaPost.new(login[:login])
     
     @origin      = {:address1 => "61A York St", :city => "Ottawa", :province => "Ontario", :country => "Canada", :postal_code => "K1N 5T2"}
@@ -21,7 +22,17 @@ class CanadaPostTest < Test::Unit::TestCase
   end
   
   def test_find_rates
-    assert_instance_of CanadaPost::CanadaPostRateResponse, @carrier.find_rates(@origin, @destination, 24, @line_items)
+    rates = @carrier.find_rates(@origin, @destination, 24, @line_items)    
+    assert_instance_of CanadaPost::CanadaPostRateResponse, rates
+  end
+  
+  def test_postal_outlets
+    @carrier.expects(:ssl_post).returns(@response_with_postal_outlets)
+    rates = @carrier.find_rates(@origin, @destination, 24, @line_items)    
+    
+    rates.postal_outlets.each do |outlet|
+      assert_instance_of CanadaPost::PostalOutlet, outlet
+    end
   end
   
 end
