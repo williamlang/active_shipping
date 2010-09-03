@@ -20,7 +20,7 @@ module ActiveMerchant
       end
       
       # need to store these because responses do not contain origin and destination that is sent to the server
-      cattr_accessor :origin, :destination
+      cattr_accessor :origin, :destination, :french
       cattr_reader :name
       @@name = "Canada Post"
       
@@ -30,7 +30,6 @@ module ActiveMerchant
       
       DEFAULT_TURN_AROUND_TIME = 5
       ENGLISH_URL = "http://sellonline.canadapost.ca:30000"
-      FRENCH_URL = "http://cybervente.canadapost.ca:30000"
       DOCTYPE = '<!DOCTYPE eparcel SYSTEM "http://sellonline.canadapost.ca/DevelopersResources/protocolV3/eParcel.dtd">'
       
       
@@ -80,8 +79,9 @@ module ActiveMerchant
        '-50000' => "Internal problem - Please contact Sell Online Help Desk"
       }
       
-      def initialize(merchant_id)
+      def initialize(merchant_id, french = false)
         @merchant_id = merchant_id
+        @french = french
       end
       
       def build_rate_request(origin, destination, turn_around_time, line_items = [])
@@ -89,7 +89,7 @@ module ActiveMerchant
         destination = Location.new(destination)
         
         xml_request = XmlNode.new('eparcel') do |root_node|
-          root_node << XmlNode.new('language', 'en')
+          root_node << XmlNode.new('language', french? ? 'fr' : 'en')
           root_node << XmlNode.new('ratesAndServicesRequest') do |request|
             
             # Merchant Identification assigned by Canada Post
@@ -186,7 +186,7 @@ module ActiveMerchant
         true
       end
       
-      def find_rates(origin, destination, turn_around_time, line_items = [], french = false)
+      def find_rates(origin, destination, turn_around_time, line_items = [])
         rate_request = build_rate_request(origin, destination, turn_around_time, line_items)
         commit(rate_request)
       end
@@ -200,11 +200,15 @@ module ActiveMerchant
           :postal_code => 'K1N5T2'
         }
       end
+      
+      def french?
+        @french
+      end
 
       protected
       
-      def commit(request, french = false)
-        response = parse_rate_response( ssl_post(french ? FRENCH_URL : ENGLISH_URL, request) )
+      def commit(request)
+        response = parse_rate_response( ssl_post(ENGLISH_URL, request) )
       end
       
       def date_for(string)
