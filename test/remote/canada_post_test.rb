@@ -51,4 +51,12 @@ class CanadaPostTest < Test::Unit::TestCase
     end
   end
   
+  def test_illegal_origin
+    @origin = @destination
+    
+    assert_raise ActiveMerchant::Shipping::ResponseError do
+      rates = @carrier.find_rates(@origin, @destination, 24, @line_items)
+      assert !rates.success?
+    end
+  end
 end
