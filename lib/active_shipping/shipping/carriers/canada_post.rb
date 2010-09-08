@@ -1,4 +1,3 @@
-# -*- encoding: utf-8 -*-
 require 'cgi'
 
 module ActiveMerchant
@@ -20,7 +19,7 @@ module ActiveMerchant
       end
       
       # need to store these because responses do not contain origin and destination that is sent to the server
-      cattr_accessor :origin, :destination, :french
+      cattr_accessor :origin, :destination
       cattr_reader :name
       @@name = "Canada Post"
       
@@ -30,8 +29,7 @@ module ActiveMerchant
       
       DEFAULT_TURN_AROUND_TIME = 5
       ENGLISH_URL = "http://sellonline.canadapost.ca:30000"
-      DOCTYPE = '<!DOCTYPE eparcel SYSTEM "http://sellonline.canadapost.ca/DevelopersResources/protocolV3/eParcel.dtd">'
-      
+      DOCTYPE = '<!DOCTYPE eparcel SYSTEM "http://sellonline.canadapost.ca/DevelopersResources/protocolV3/eParcel.dtd">'      
       
       RESPONSE_CODES = {
        '1'     =>	"All calculation was done",
@@ -79,17 +77,21 @@ module ActiveMerchant
        '-50000' => "Internal problem - Please contact Sell Online Help Desk"
       }
       
-      def initialize(merchant_id, french = false)
-        @merchant_id = merchant_id
-        @french = french
+      def initialize(options)
+        @merchant_id = options[:login]
+        @french = options[:french] ? true : false
+      end
+      
+      def requirements
+        ['login']
       end
       
       def build_rate_request(origin, destination, turn_around_time, line_items = [])
-        origin = Location.new(origin)
-        destination = Location.new(destination)
+        origin = origin.is_a?(Location) ? origin : Location.new(origin)
+        destination = destination.is_a?(Location) ? destination : Location.new(destination)
         
         xml_request = XmlNode.new('eparcel') do |root_node|
-          root_node << XmlNode.new('language', french? ? 'fr' : 'en')
+          root_node << XmlNode.new('language', 'en')
           root_node << XmlNode.new('ratesAndServicesRequest') do |request|
             
             # Merchant Identification assigned by Canada Post
@@ -122,13 +124,15 @@ module ActiveMerchant
         boxes = []
         if success
           xml.elements.each('eparcel/ratesAndServicesResponse/product') do |product|
-            service_name = product.get_text('name').to_s
-            
+            service_name = "Canada Post " + product.get_text('name').to_s
+            service_code = product.attribute('id').to_s
             delivery_date = date_for(product.get_text('deliveryDate').to_s)
             
             rate_estimates << RateEstimate.new(self.origin, self.destination, @@name, service_name,
+              :service_code => service_code,
               :total_price => product.get_text('rate').to_s,
-              :delivery_date => delivery_date
+              :delivery_date => delivery_date,
+              :currency => 'CAD'
             )
           end
           
@@ -179,14 +183,15 @@ module ActiveMerchant
       
       def valid_credentials?
         location = self.class.default_location
-        find_rates(location, location, DEFAULT_TURN_AROUND_TIME)
+        line_items = [Package.new(500, [2, 3, 4], :description => "a box full of stuff", :value => 25)]
+        find_rates(location, location, line_items, DEFAULT_TURN_AROUND_TIME)
       rescue ActiveMerchant::Shipping::ResponseError
         false
       else
         true
       end
       
-      def find_rates(origin, destination, turn_around_time, line_items = [])
+      def find_rates(origin, destination, line_items = [], turn_around_time = 24, french = false)
         rate_request = build_rate_request(origin, destination, turn_around_time, line_items)
         commit(rate_request)
       end
@@ -201,13 +206,17 @@ module ActiveMerchant
         }
       end
       
+      def maximum_weight
+        Mass.new(30, :kilograms)
+      end
+      
       def french?
         @french
       end
 
       protected
       
-      def commit(request)
+      def commit(request, french = false)
         response = parse_rate_response( ssl_post(ENGLISH_URL, request) )
       end
       
@@ -240,13 +249,13 @@ module ActiveMerchant
           line_items.each do |line_item|
             
             line_items_node << XmlNode.new('item') do |item|
-              item << XmlNode.new('quantity', line_item[:quantity])
-              item << XmlNode.new('weight', line_item[:weight])
-              item << XmlNode.new('length', line_item[:length])
-              item << XmlNode.new('width', line_item[:width])
-              item << XmlNode.new('height', line_item[:height])
-              item << XmlNode.new('description', line_item[:description])
-              item << XmlNode.new('readyToShip', line_item[:ready_to_ship] ? true : nil)
+              item << XmlNode.new('quantity', 1)
+              item << XmlNode.new('weight', line_item.kilograms)
+              item << XmlNode.new('length', line_item.cm(:length).to_s)
+              item << XmlNode.new('width', line_item.cm(:width).to_s)
+              item << XmlNode.new('height', line_item.cm(:height).to_s)
+              item << XmlNode.new('description', line_item.options[:description] || ' ')
+              item << XmlNode.new('readyToShip', line_item.options[:ready_to_ship] || nil)
               
               # By setting the 'readyToShip' tag to true, Sell Online will not pack this item in the boxes defined in the merchant profile.
             end
@@ -257,9 +266,7 @@ module ActiveMerchant
       end
       
       def total_price_of(line_items)
-        sum = 0
-        line_items.each {|l| sum += l[:price] }
-        sum
+        line_items.sum(&:value)
       end
     end
   end

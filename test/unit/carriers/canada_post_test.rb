@@ -3,8 +3,8 @@ require 'test_helper'
 class CanadaPostTest < Test::Unit::TestCase
 
   def setup
-    @carrier  = CanadaPost.new('CPC_DEMO_XML')
-    @french_carrier  = CanadaPost.new('CPC_DEMO_XML', true)
+    @carrier  = CanadaPost.new(:login => 'CPC_DEMO_XML')
+    @french_carrier  = CanadaPost.new(:login => 'CPC_DEMO_XML', :french => true)
     @request  = xml_fixture('canadapost/example_request')
     @response = xml_fixture('canadapost/example_response')
     @response_french = xml_fixture('canadapost/example_response_french')
@@ -12,7 +12,7 @@ class CanadaPostTest < Test::Unit::TestCase
     
     @origin      = {:address1 => "61A York St", :city => "Ottawa", :province => "ON", :country => "Canada", :postal_code => "K1N 5T2"}
     @destination = {:city => "Beverly Hills", :state => "CA", :country => "United States", :postal_code => "90210"}
-    @line_items  = [{:price => 10.00, :weight => 5.00, :width => 3.00, :height => 4.00, :length => 2.00, :quantity => 1, :description => "a box full of stuff"}]
+    @line_items  = [Package.new(500, [2, 3, 4], :description => "a box full of stuff", :value => 25)]
   end
   
   def test_french_false
@@ -113,7 +113,7 @@ class CanadaPostTest < Test::Unit::TestCase
   end
   
   def test_total_price_of
-    @line_items << {:price => 15.00, :weight => 5.00, :width => 3.00, :height => 4.00, :length => 2.00, :quantity => 1, :description => "another box full of stuff"}
+    @line_items  = [Package.new(500, [2, 3, 4], :description => "a box full of stuff", :value => 25)]
     assert_equal 25, @carrier.send(:total_price_of, @line_items)
   end
 end
