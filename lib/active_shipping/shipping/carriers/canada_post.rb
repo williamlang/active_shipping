@@ -18,17 +18,16 @@ module ActiveMerchant
         
       end
       
-      # need to store these because responses do not contain origin and destination that is sent to the server
-      cattr_accessor :origin, :destination
-      cattr_reader :name
+      cattr_reader :name, :name_french
       @@name = "Canada Post"
+      @@name_french = "Postes Canada"
       
       Box = Struct.new(:name, :weight, :expediter_weight, :length, :width, :height, :packedItems)
       PackedItem = Struct.new(:quantity, :description)
       PostalOutlet = Struct.new(:sequence_no, :distance, :name, :business_name, :postal_address, :business_hours)
       
-      DEFAULT_TURN_AROUND_TIME = 5
-      ENGLISH_URL = "http://sellonline.canadapost.ca:30000"
+      DEFAULT_TURN_AROUND_TIME = 24
+      URL = "http://sellonline.canadapost.ca:30000"
       DOCTYPE = '<!DOCTYPE eparcel SYSTEM "http://sellonline.canadapost.ca/DevelopersResources/protocolV3/eParcel.dtd">'      
       
       RESPONSE_CODES = {
@@ -77,32 +76,54 @@ module ActiveMerchant
        '-50000' => "Internal problem - Please contact Sell Online Help Desk"
       }
       
-      def initialize(options)
-        @merchant_id = options[:login]
-        @french = options[:french] ? true : false
-      end
-      
       def requirements
         ['login']
       end
       
-      def build_rate_request(origin, destination, turn_around_time, line_items = [])
+      def find_rates(origin, destination, line_items = [], options = {})
+        rate_request = build_rate_request(origin, destination, line_items, options)
+        commit(rate_request, origin, destination, options)
+      end
+      
+      def maximum_weight
+        Mass.new(30, :kilograms)
+      end
+      
+      def self.default_location
+        {
+          :country => 'CA',
+          :province => 'ON',
+          :city => 'Ottawa',
+          :address1 => '61A York St',
+          :postal_code => 'K1N5T2'
+        }
+      end
+
+      protected
+      
+      def commit(request, origin, destination, options = {})
+        response = parse_rate_response(ssl_post(URL, request), origin, destination, options)
+      end
+      
+      private
+      
+      def build_rate_request(origin, destination, line_items = [], options = {})
         origin = origin.is_a?(Location) ? origin : Location.new(origin)
         destination = destination.is_a?(Location) ? destination : Location.new(destination)
-        
+
         xml_request = XmlNode.new('eparcel') do |root_node|
-          root_node << XmlNode.new('language', 'en')
+          root_node << XmlNode.new('language', @options[:french] ? 'fr' : 'en')
           root_node << XmlNode.new('ratesAndServicesRequest') do |request|
-            
+
             # Merchant Identification assigned by Canada Post
             request << XmlNode.new('merchantCPCID', @merchant_id)
-            request << XmlNode.new('fromPostalCode', origin.postal_code) if origin
-            request << XmlNode.new('turnAroundTime', turn_around_time) if turn_around_time
-            request << XmlNode.new('itemsPrice', total_price_of(line_items))
-            
+            request << XmlNode.new('fromPostalCode', origin.postal_code)
+            request << XmlNode.new('turnAroundTime', options[:turn_around_time] || DEFAULT_TURN_AROUND_TIME)
+            request << XmlNode.new('itemsPrice', line_items.sum(&:value))
+
             #line items
             request << build_line_items(line_items)
-            
+
             #delivery info
             #NOTE: These tags MUST be after line items
             request << XmlNode.new('city', destination.city)
@@ -111,31 +132,31 @@ module ActiveMerchant
             request << XmlNode.new('postalCode', destination.postal_code)
           end
         end
-        
+
         DOCTYPE + xml_request.to_s
       end
 
-      def parse_rate_response(response)
+      def parse_rate_response(response, origin, destination, options = {})
         xml = REXML::Document.new(response)
         success = response_success?(xml)
         message = response_message(xml)
-        
+
         rate_estimates = []
         boxes = []
         if success
           xml.elements.each('eparcel/ratesAndServicesResponse/product') do |product|
-            service_name = "Canada Post " + product.get_text('name').to_s
+            service_name = (options[:french] ? @@name_french : @@name) + product.get_text('name').to_s
             service_code = product.attribute('id').to_s
             delivery_date = date_for(product.get_text('deliveryDate').to_s)
-            
-            rate_estimates << RateEstimate.new(self.origin, self.destination, @@name, service_name,
+
+            rate_estimates << RateEstimate.new(origin, destination, @@name, service_name,
               :service_code => service_code,
               :total_price => product.get_text('rate').to_s,
               :delivery_date => delivery_date,
               :currency => 'CAD'
             )
           end
-          
+
           boxes = xml.elements.collect('eparcel/ratesAndServicesResponse/packing/box') do |box|
             b = Box.new
             b.packedItems = []
@@ -153,14 +174,14 @@ module ActiveMerchant
             end
             b
           end
-          
+
           postal_outlets = xml.elements.collect('eparcel/ratesAndServicesResponse/nearestPostalOutlet') do |outlet|
             postal_outlet = PostalOutlet.new
             postal_outlet.sequence_no    = outlet.get_text('postalOutletSequenceNo').to_s
             postal_outlet.distance       = outlet.get_text('distance').to_s
             postal_outlet.name           = outlet.get_text('outletName').to_s
             postal_outlet.business_name  = outlet.get_text('businessName').to_s
-            
+
             postal_outlet.postal_address = Location.new({
               :address1     => outlet.get_text('postalAddress/addressLine').to_s,
               :postal_code  => outlet.get_text('postalAddress/postal_code').to_s,
@@ -169,55 +190,16 @@ module ActiveMerchant
               :country      => 'Canada',
               :phone_number => outlet.get_text('phoneNumber').to_s
             })
-          
+
             postal_outlet.business_hours = outlet.elements.collect('businessHours') do |hour|
               { :day_of_week => hour.get_text('dayOfWeek').to_s, :time => hour.get_text('time').to_s }
             end
-            
+
             postal_outlet
           end
         end
-        
-        CanadaPostRateResponse.new(success, message, Hash.from_xml(response), :rates => rate_estimates, :xml => response, :boxes => boxes, :postal_outlets => postal_outlets)
-      end
-      
-      def valid_credentials?
-        location = self.class.default_location
-        line_items = [Package.new(500, [2, 3, 4], :description => "a box full of stuff", :value => 25)]
-        find_rates(location, location, line_items, DEFAULT_TURN_AROUND_TIME)
-      rescue ActiveMerchant::Shipping::ResponseError
-        false
-      else
-        true
-      end
-      
-      def find_rates(origin, destination, line_items = [], turn_around_time = 24, french = false)
-        rate_request = build_rate_request(origin, destination, turn_around_time, line_items)
-        commit(rate_request)
-      end
-      
-      def self.default_location
-        {
-          :country => 'CA',
-          :province => 'ON',
-          :city => 'Ottawa',
-          :address1 => '61A York St',
-          :postal_code => 'K1N5T2'
-        }
-      end
-      
-      def maximum_weight
-        Mass.new(30, :kilograms)
-      end
-      
-      def french?
-        @french
-      end
 
-      protected
-      
-      def commit(request, french = false)
-        response = parse_rate_response( ssl_post(ENGLISH_URL, request) )
+        CanadaPostRateResponse.new(success, message, Hash.from_xml(response), :rates => rate_estimates, :xml => response, :boxes => boxes, :postal_outlets => postal_outlets)
       end
       
       def date_for(string)
@@ -263,10 +245,6 @@ module ActiveMerchant
         end
         
         xml_line_items
-      end
-      
-      def total_price_of(line_items)
-        line_items.sum(&:value)
       end
     end
   end

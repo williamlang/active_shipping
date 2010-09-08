@@ -15,31 +15,23 @@ class CanadaPostTest < Test::Unit::TestCase
     @line_items  = [Package.new(500, [2, 3, 4], :description => "a box full of stuff", :value => 25)]
   end
   
-  def test_french_false
-    assert !@carrier.french?
-  end
-  
-  def test_french_true
-    assert @french_carrier.french?
-  end
-  
   def test_parse_rate_response_french
     assert_equal @request, @french_carrier.build_rate_request(@origin, @destination, 24, @line_items)
   end
   
   def test_parse_rate_response_french
-    rate_response = @french_carrier.parse_rate_response(@response_french)
-    assert rate_response.is_a?(RateResponse)
-    assert rate_response.success?
-    
-    rate_response.rate_estimates.each do |rate|
+    @french_carrier.expects(:ssl_post).returns(@response_french)
+    rate_estimates = @french_carrier.find_rates(@origin, @destination, @line_items, :french => true)
+    # rate_response = @french_carrier.send :parse_rate_response, @response_french, @origin, @desination
+  
+    rate_estimates.rates.each do |rate|
       assert_instance_of RateEstimate, rate
       assert_instance_of Time, rate.delivery_date
       assert_instance_of String, rate.service_name
       assert_instance_of Fixnum, rate.total_price
     end
     
-    rate_response.boxes.each do |box|
+    rate_estimates.boxes.each do |box|
       assert_instance_of CanadaPost::Box, box
       assert_instance_of String, box.name
       assert_instance_of Float, box.weight
@@ -47,7 +39,7 @@ class CanadaPostTest < Test::Unit::TestCase
       assert_instance_of Float, box.length
       assert_instance_of Float, box.height
       assert_instance_of Float, box.width
-
+    
       box.packedItems.each do |p|
         assert_instance_of Fixnum, p.quantity
         assert_instance_of String, p.description
@@ -57,22 +49,22 @@ class CanadaPostTest < Test::Unit::TestCase
   end
   
   def test_build_rate_request
-    assert_equal @request, @carrier.build_rate_request(@origin, @destination, 24, @line_items)
+    @carrier.expects(:commit).with(@request, @origin, @destination)
+    @carrier.find_rates(@origin, @destination, @line_items)
   end
   
   def test_parse_rate_response
-    rate_response = @carrier.parse_rate_response(@response)
-    assert rate_response.is_a?(RateResponse)
-    assert rate_response.success?
+    @carrier.expects(:ssl_post).returns(@response)
+    rate_estimates = @carrier.find_rates(@origin, @destination, @line_items)
     
-    rate_response.rate_estimates.each do |rate|
+    rate_estimates.rates.each do |rate|
       assert_instance_of RateEstimate, rate
       assert_instance_of Time, rate.delivery_date
       assert_instance_of String, rate.service_name
       assert_instance_of Fixnum, rate.total_price
     end
     
-    rate_response.boxes.each do |box|
+    rate_estimates.boxes.each do |box|
       assert_instance_of CanadaPost::Box, box
       assert_instance_of String, box.name
       assert_instance_of Float, box.weight
@@ -90,13 +82,11 @@ class CanadaPostTest < Test::Unit::TestCase
   
   def test_non_success_parse_rate_response
     assert_raise ActiveMerchant::Shipping::ResponseError do
-      rate_response = @carrier.parse_rate_response(@bad_response)
+      @carrier.expects(:ssl_post).returns(@bad_response)
+      rate_estimates = @carrier.find_rates(@origin, @destination, @line_items)
       
-      assert rate_response.is_a?(RateResponse)
-      assert !rate_response.success?
-
-      assert_equal [], rate_response.rate_estimates
-      assert_equal [], rate_response.boxes
+      assert_equal [], rate_estimates.rates
+      assert_equal [], rate_estimates.boxes
     end
   end
   
