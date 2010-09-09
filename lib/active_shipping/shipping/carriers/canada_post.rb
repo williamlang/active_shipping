@@ -77,7 +77,7 @@ module ActiveMerchant
       }
       
       def requirements
-        ['login']
+        [:login]
       end
       
       def find_rates(origin, destination, line_items = [], options = {})
@@ -116,9 +116,9 @@ module ActiveMerchant
           root_node << XmlNode.new('ratesAndServicesRequest') do |request|
 
             # Merchant Identification assigned by Canada Post
-            request << XmlNode.new('merchantCPCID', @merchant_id)
+            request << XmlNode.new('merchantCPCID', @options[:login])
             request << XmlNode.new('fromPostalCode', origin.postal_code)
-            request << XmlNode.new('turnAroundTime', options[:turn_around_time] || DEFAULT_TURN_AROUND_TIME)
+            request << XmlNode.new('turnAroundTime', options[:turn_around_time] ? options[:turn_around_time] : DEFAULT_TURN_AROUND_TIME)
             request << XmlNode.new('itemsPrice', line_items.sum(&:value))
 
             #line items
@@ -145,7 +145,7 @@ module ActiveMerchant
         boxes = []
         if success
           xml.elements.each('eparcel/ratesAndServicesResponse/product') do |product|
-            service_name = (options[:french] ? @@name_french : @@name) + product.get_text('name').to_s
+            service_name = (@options[:french] ? @@name_french : @@name) + product.get_text('name').to_s
             service_code = product.attribute('id').to_s
             delivery_date = date_for(product.get_text('deliveryDate').to_s)
 
