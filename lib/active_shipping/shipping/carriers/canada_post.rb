@@ -108,6 +108,7 @@ module ActiveMerchant
       private
       
       def build_rate_request(origin, destination, line_items = [], options = {})
+        line_items = [line_items] if !line_items.is_a?(Array)
         origin = origin.is_a?(Location) ? origin : Location.new(origin)
         destination = destination.is_a?(Location) ? destination : Location.new(destination)
 
