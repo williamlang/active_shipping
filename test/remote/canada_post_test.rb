@@ -11,7 +11,7 @@ class CanadaPostTest < Test::Unit::TestCase
     @response_with_postal_outlets = xml_fixture('canadapost/example_response_with_postal_outlet')
     @response_with_postal_outlets_french = xml_fixture('canadapost/example_response_with_postal_outlet_french')
     @carrier   = CanadaPost.new(login)
-    @french_carrier = CanadaPost.new(login)
+    @french_carrier = CanadaPost.new(login.merge(:french => true))
     
     @origin      = {:address1 => "61A York St", :city => "Ottawa", :province => "Ontario", :country => "Canada", :postal_code => "K1N 5T2"}
     @destination = {:city => "Beverly Hills", :state => "CA", :country => "United States", :postal_code => "90210"}

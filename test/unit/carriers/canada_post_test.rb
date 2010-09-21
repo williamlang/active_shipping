@@ -3,8 +3,11 @@ require 'test_helper'
 class CanadaPostTest < Test::Unit::TestCase
 
   def setup
-    @carrier  = CanadaPost.new(:login => 'CPC_DEMO_XML')
-    @french_carrier  = CanadaPost.new(:login => 'CPC_DEMO_XML', :french => true)
+    login = fixtures(:canada_post)
+    
+    @carrier  = CanadaPost.new(login)
+    @french_carrier  = CanadaPost.new(login.merge(:french => true))
+    
     @request  = xml_fixture('canadapost/example_request')
     @response = xml_fixture('canadapost/example_response')
     @response_french = xml_fixture('canadapost/example_response_french')
@@ -21,7 +24,7 @@ class CanadaPostTest < Test::Unit::TestCase
   
   def test_parse_rate_response_french
     @french_carrier.expects(:ssl_post).returns(@response_french)
-    rate_estimates = @french_carrier.find_rates(@origin, @destination, @line_items, :french => true)
+    rate_estimates = @french_carrier.find_rates(@origin, @destination, @line_items)
     # rate_response = @french_carrier.send :parse_rate_response, @response_french, @origin, @desination
   
     rate_estimates.rates.each do |rate|

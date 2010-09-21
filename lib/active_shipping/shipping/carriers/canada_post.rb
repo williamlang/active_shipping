@@ -5,6 +5,10 @@ module ActiveMerchant
     
     class CanadaPost < Carrier
       
+      # NOTE!
+      # A Merchant CPC Id must be assigned to you by Canada Post
+      # CPC_DEMO_XML is just a public domain account for testing
+      
       class CanadaPostRateResponse < RateResponse
         
         attr_reader :boxes, :postal_outlets
@@ -116,7 +120,6 @@ module ActiveMerchant
           root_node << XmlNode.new('language', @options[:french] ? 'fr' : 'en')
           root_node << XmlNode.new('ratesAndServicesRequest') do |request|
 
-            # Merchant Identification assigned by Canada Post
             request << XmlNode.new('merchantCPCID', @options[:login])
             request << XmlNode.new('fromPostalCode', origin.postal_code)
             request << XmlNode.new('turnAroundTime', options[:turn_around_time] ? options[:turn_around_time] : DEFAULT_TURN_AROUND_TIME)
