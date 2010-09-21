@@ -49,7 +49,7 @@ class CanadaPostTest < Test::Unit::TestCase
   end
   
   def test_build_rate_request
-    @carrier.expects(:commit).with(@request, @origin, @destination)
+    @carrier.expects(:commit).with(@request, @origin, @destination, {})
     @carrier.find_rates(@origin, @destination, @line_items)
   end
   
@@ -100,10 +100,5 @@ class CanadaPostTest < Test::Unit::TestCase
     
     xml_string = xml_line_items.to_s
     assert_match /a box full of stuff/, xml_string
-  end
-  
-  def test_total_price_of
-    @line_items  = [Package.new(500, [2, 3, 4], :description => "a box full of stuff", :value => 25)]
-    assert_equal 25, @carrier.send(:total_price_of, @line_items)
   end
 end
